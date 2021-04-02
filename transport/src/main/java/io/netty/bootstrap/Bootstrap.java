@@ -42,6 +42,8 @@ import java.net.SocketAddress;
  *
  * <p>The {@link #bind()} methods are useful in combination with connectionless transports such as datagram (UDP).
  * For regular TCP connections, please use the provided {@link #connect()} methods.</p>
+ *
+ * Client的启动器实现类
  */
 public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
@@ -49,7 +51,7 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     private static final AddressResolverGroup<?> DEFAULT_RESOLVER = DefaultAddressResolverGroup.INSTANCE;
 
-    private final BootstrapConfig config = new BootstrapConfig(this);
+    private final BootstrapConfig config = new BootstrapConfig(this);   //启动类配置对象
 
     @SuppressWarnings("unchecked")
     private volatile AddressResolverGroup<SocketAddress> resolver =
@@ -60,8 +62,8 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     private Bootstrap(Bootstrap bootstrap) {
         super(bootstrap);
-        resolver = bootstrap.resolver;
-        remoteAddress = bootstrap.remoteAddress;
+        resolver = bootstrap.resolver;  //地址解析器对象
+        remoteAddress = bootstrap.remoteAddress; //连接地址
     }
 
     /**
@@ -105,14 +107,16 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     /**
      * Connect a {@link Channel} to the remote peer.
+     * 连接服务端，即启动客户端；
      */
     public ChannelFuture connect() {
-        validate();
+        validate(); //校验必要的参数
         SocketAddress remoteAddress = this.remoteAddress;
         if (remoteAddress == null) {
             throw new IllegalStateException("remoteAddress not set");
         }
 
+        //解析远程的地址并进行连接
         return doResolveAndConnect(remoteAddress, config.localAddress());
     }
 
@@ -136,6 +140,7 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
     public ChannelFuture connect(SocketAddress remoteAddress) {
         ObjectUtil.checkNotNull(remoteAddress, "remoteAddress");
         validate();
+        //解析远程的地址并进行连接
         return doResolveAndConnect(remoteAddress, config.localAddress());
     }
 
@@ -150,18 +155,25 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     /**
      * @see #connect()
+     *
+     * 解析远程地址并进行连接
+     * 方法返回ChannelFuture对象，也就是异步的连接服务端，启动客户端。如果需要同步，则需要调用ChannelFuture#sync()方法
      */
     private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, final SocketAddress localAddress) {
+        //初始化并注册一个Channel对象，因为注册是异步的过程，所以返回一个ChannelFuture对象
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
 
         if (regFuture.isDone()) {
+            //若执行失败，直接进行返回
             if (!regFuture.isSuccess()) {
                 return regFuture;
             }
+            //解析远程地址，并进行连接
             return doResolveAndConnect0(channel, remoteAddress, localAddress, channel.newPromise());
         } else {
             // Registration future is almost always fulfilled already, but just in case it's not.
+            //如果异步注册未完成，则调用ChannelFuture#addListener()方法，添加监听器，在注册完成后，进行回调执行#doResolveAndConnect0(...)方法的逻辑
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
             regFuture.addListener(new ChannelFutureListener() {
                 @Override
@@ -177,6 +189,7 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
                         // Registration was successful, so set the correct executor to use.
                         // See https://github.com/netty/netty/issues/2586
                         promise.registered();
+                        //解析远程地址，并进行连接
                         doResolveAndConnect0(channel, remoteAddress, localAddress, promise);
                     }
                 }
@@ -185,6 +198,9 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
         }
     }
 
+    /**
+     * 解析远程地址，并进行连接
+     */
     private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
                                                final SocketAddress localAddress, final ChannelPromise promise) {
         try {
@@ -203,9 +219,11 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
                 return promise;
             }
 
+            //解析远程地址
             final Future<SocketAddress> resolveFuture = resolver.resolve(remoteAddress);
 
             if (resolveFuture.isDone()) {
+                //解析远程地址失败，关闭channel，并回调通知promise异常
                 final Throwable resolveFailureCause = resolveFuture.cause();
 
                 if (resolveFailureCause != null) {
@@ -214,6 +232,7 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
                     promise.setFailure(resolveFailureCause);
                 } else {
                     // Succeeded to resolve immediately; cached? (or did a blocking lookup)
+                    //连接远程地址
                     doConnect(resolveFuture.getNow(), localAddress, promise);
                 }
                 return promise;
@@ -223,20 +242,24 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
             resolveFuture.addListener(new FutureListener<SocketAddress>() {
                 @Override
                 public void operationComplete(Future<SocketAddress> future) throws Exception {
+                    // 解析远程地址失败，关闭 Channel ，并回调通知 promise 异常
                     if (future.cause() != null) {
                         channel.close();
                         promise.setFailure(future.cause());
                     } else {
+                        // 解析远程地址成功，连接远程地址
                         doConnect(future.getNow(), localAddress, promise);
                     }
                 }
             });
         } catch (Throwable cause) {
+            // 发生异常，并回调通知 promise 异常
             promise.tryFailure(cause);
         }
         return promise;
     }
 
+    //执行Channel连接远程地址
     private static void doConnect(
             final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise connectPromise) {
 
@@ -256,12 +279,16 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
         });
     }
 
+    //初始化Channel配置
     @Override
     void init(Channel channel) {
         ChannelPipeline p = channel.pipeline();
+        //添加处理器到Pipeline中
         p.addLast(config.handler());
 
+        // 初始化 Channel 的可选项集合
         setChannelOptions(channel, newOptionsArray(), logger);
+        // 初始化 Channel 的属性集合
         setAttributes(channel, newAttributesArray());
     }
 

@@ -41,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * {@link Bootstrap} sub-class which allows easy bootstrap of {@link ServerChannel}
  *
+ * Server接受一个Client的连接后，会创建一个对应的Channel对象。因此，我们看到ServerBootstrap的childOptions、childAttrs、childGroup、childHandler属性，都是Channel的可选集合、属性集合、EventLoopGroup对象、处理器；
  */
 public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerChannel> {
 
@@ -48,10 +49,15 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     // The order in which child ChannelOptions are applied is important they may depend on each other for validation
     // purposes.
+    //子Channel的可选项集合
     private final Map<ChannelOption<?>, Object> childOptions = new LinkedHashMap<ChannelOption<?>, Object>();
+    //子Channel的属性集合
     private final Map<AttributeKey<?>, Object> childAttrs = new ConcurrentHashMap<AttributeKey<?>, Object>();
+    //启动类配置对象
     private final ServerBootstrapConfig config = new ServerBootstrapConfig(this);
+    //子Channel的EventLoopGroup对象
     private volatile EventLoopGroup childGroup;
+    //子Channel的处理器
     private volatile ChannelHandler childHandler;
 
     public ServerBootstrap() { }
@@ -68,6 +74,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     /**
      * Specify the {@link EventLoopGroup} which is used for the parent (acceptor) and the child (client).
+     *
+     * 当只传入一个EventLoopGroup对象时，即调用的是group(EventLoopGroup group)，即parentGroup和childGroup使用同一个。
      */
     @Override
     public ServerBootstrap group(EventLoopGroup group) {
@@ -92,6 +100,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
      * Allow to specify a {@link ChannelOption} which is used for the {@link Channel} instances once they get created
      * (after the acceptor accepted the {@link Channel}). Use a value of {@code null} to remove a previous set
      * {@link ChannelOption}.
+     *
+     * 子Channel的可选项
      */
     public <T> ServerBootstrap childOption(ChannelOption<T> childOption, T value) {
         ObjectUtil.checkNotNull(childOption, "childOption");
@@ -108,6 +118,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
     /**
      * Set the specific {@link AttributeKey} with the given value on every child {@link Channel}. If the value is
      * {@code null} the {@link AttributeKey} is removed
+     *
+     * 子Channel的属性
      */
     public <T> ServerBootstrap childAttr(AttributeKey<T> childKey, T value) {
         ObjectUtil.checkNotNull(childKey, "childKey");
@@ -121,33 +133,45 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     /**
      * Set the {@link ChannelHandler} which is used to serve the request for the {@link Channel}'s.
+     *
+     * 设置子Channel的处理器
      */
     public ServerBootstrap childHandler(ChannelHandler childHandler) {
         this.childHandler = ObjectUtil.checkNotNull(childHandler, "childHandler");
         return this;
     }
 
+    //初始化Channel配置
     @Override
     void init(Channel channel) {
+        //初始化Channel的可选项集合
         setChannelOptions(channel, newOptionsArray(), logger);
+        //初始化Channel的属性集合
         setAttributes(channel, newAttributesArray());
 
         ChannelPipeline p = channel.pipeline();
 
+        //设置当前的属性
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;
         final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
+        //添加ChannelInitializer对象到pipeline中，用于后续初始化ChannelHandler到pipeline中；
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(final Channel ch) {
                 final ChannelPipeline pipeline = ch.pipeline();
+
+                //添加配置的ChannelHandler到pipeline中
                 ChannelHandler handler = config.handler();
                 if (handler != null) {
                     pipeline.addLast(handler);
                 }
 
+                //添加ServerBootstrapAcceptor到pipeline中
+                //使用EventLoop执行的原因，参见 https://github.com/lightningMan/netty/commit/4638df20628a8987c8709f0f8e5f3679a914ce1a
+                //为什么使用EventLoop执行添加的过程？如果启动器配置的处理器，并且ServerBootstrapAcceptor不使用EventLoop添加，则会导致ServerBootstrapAcceptor添加到配置的处理器之前；
                 ch.eventLoop().execute(new Runnable() {
                     @Override
                     public void run() {
@@ -172,6 +196,9 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         return this;
     }
 
+    /**
+     * ServerBootstrapAcceptor也是一个ChannelHandler实现类，用于接受客户端的连接请求。
+     */
     private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter {
 
         private final EventLoopGroup childGroup;
@@ -245,6 +272,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         }
     }
 
+    //克隆ServerBootstrap对象
     @Override
     @SuppressWarnings("CloneDoesntCallSuperClone")
     public ServerBootstrap clone() {

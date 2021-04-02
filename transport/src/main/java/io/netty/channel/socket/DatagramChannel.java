@@ -25,6 +25,8 @@ import java.net.NetworkInterface;
 
 /**
  * A UDP/IP {@link Channel}.
+ *
+ * 通过UDP读取数据
  */
 public interface DatagramChannel extends Channel {
     @Override

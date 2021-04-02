@@ -53,6 +53,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a
  * {@link Selector} and so does the multi-plexing of these in the event loop.
  *
+ * 实现对注册到其中的Channel的就绪的IO事件，和对用户提交的任务进行处理；
  */
 public final class NioEventLoop extends SingleThreadEventLoop {
 
@@ -62,8 +63,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
     private static final boolean DISABLE_KEY_SET_OPTIMIZATION =
             SystemPropertyUtil.getBoolean("io.netty.noKeySetOptimization", false);
-
+    //少于该 N 值，不开启空轮询重建新的 Selector 对象的功能
     private static final int MIN_PREMATURE_SELECTOR_RETURNS = 3;
+    //Nio Selector空轮询该N次后，重建新的Selector对象；用以解决JDK NIO的epoll空轮询Bug
     private static final int SELECTOR_AUTO_REBUILD_THRESHOLD;
 
     private final IntSupplier selectNowSupplier = new IntSupplier() {
@@ -79,6 +81,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     // - https://bugs.java.com/view_bug.do?bug_id=6427854
     // - https://github.com/netty/netty/issues/203
     static {
+        //解决 Selector#open() 方法 可能发送NPE
         final String key = "sun.nio.ch.bugLevel";
         final String bugLevel = SystemPropertyUtil.get(key);
         if (bugLevel == null) {
@@ -111,10 +114,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     /**
      * The NIO {@link Selector}.
      */
+    //包装的Selector对象，经过优化
     private Selector selector;
+    //未包装的Selector对象
     private Selector unwrappedSelector;
+    //注册的SelectionKey集合。Netty自己实现，经过优化
     private SelectedSelectionKeySet selectedKeys;
-
+    //SelectionProvider对象，用于创建Selector对象
     private final SelectorProvider provider;
 
     private static final long AWAKE = -1L;
@@ -125,11 +131,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     //    NONE             when EL is waiting with no wakeup scheduled
     //    other value T    when EL is waiting with wakeup scheduled at time T
     private final AtomicLong nextWakeupNanos = new AtomicLong(AWAKE);
-
+    //Select策略
     private final SelectStrategy selectStrategy;
-
+    // 处理 Channel 的就绪的 IO 事件，占处理任务的总时间的比例
     private volatile int ioRatio = 50;
+    //取消SelectionKey的数量
     private int cancelledKeys;
+    // 是否需要再次select Selector对象
     private boolean needsToSelectAgain;
 
     NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selectorProvider,
@@ -139,11 +147,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 rejectedExecutionHandler);
         this.provider = ObjectUtil.checkNotNull(selectorProvider, "selectorProvider");
         this.selectStrategy = ObjectUtil.checkNotNull(strategy, "selectStrategy");
+        //创建Selector对象
         final SelectorTuple selectorTuple = openSelector();
         this.selector = selectorTuple.selector;
         this.unwrappedSelector = selectorTuple.unwrappedSelector;
     }
 
+    //创建任务队列
     private static Queue<Runnable> newTaskQueue(
             EventLoopTaskQueueFactory queueFactory) {
         if (queueFactory == null) {
@@ -167,6 +177,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
+    //创建NIO Selector对象
     private SelectorTuple openSelector() {
         final Selector unwrappedSelector;
         try {
@@ -269,11 +280,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         return provider;
     }
 
+    //创建任务队列
     @Override
     protected Queue<Runnable> newTaskQueue(int maxPendingTasks) {
         return newTaskQueue0(maxPendingTasks);
     }
 
+    //mpsc 是 multiple producers and a single consumer 的缩写
     private static Queue<Runnable> newTaskQueue0(int maxPendingTasks) {
         // This event loop never calls takeTask()
         return maxPendingTasks == Integer.MAX_VALUE ? PlatformDependent.<Runnable>newMpscQueue()
@@ -339,6 +352,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
      * The default value is {@code 50}, which means the event loop will try to spend the same amount of time for I/O
      * as for non-I/O tasks. The lower the number the more time can be spent on non-I/O tasks. If value set to
      * {@code 100}, this feature will be disabled and event loop will not attempt to balance I/O and non-I/O tasks.
+     *
+     * 设置 ioRatio 属性
      */
     public void setIoRatio(int ioRatio) {
         if (ioRatio <= 0 || ioRatio > 100) {
@@ -348,6 +363,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     /**
+     * 重建NIO Selector对象
      * Replaces the current {@link Selector} of this event loop with newly created {@link Selector}s to work
      * around the infamous epoll 100% CPU bug.
      */
@@ -440,7 +456,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 try {
                     strategy = selectStrategy.calculateStrategy(selectNowSupplier, hasTasks());
                     switch (strategy) {
-                    case SelectStrategy.CONTINUE:
+                    case SelectStrategy.CONTINUE: // 默认实现下，不存在这个情况
                         continue;
 
                     case SelectStrategy.BUSY_WAIT:
@@ -478,20 +494,26 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 needsToSelectAgain = false;
                 final int ioRatio = this.ioRatio;
                 boolean ranTasks;
+                //ioRatio为100,则不考虑时间占比的分配
                 if (ioRatio == 100) {
                     try {
                         if (strategy > 0) {
+                            // 处理Channel感兴趣的就绪 IO 事件
                             processSelectedKeys();
                         }
                     } finally {
+                        // 运行所有普通任务和定时任务，不限制时间
                         // Ensure we always run tasks.
                         ranTasks = runAllTasks();
                     }
                 } else if (strategy > 0) {
+                    //ioRatio为<100，则考虑时间占比的分配
                     final long ioStartTime = System.nanoTime();
                     try {
+                        //处理 Channel 感兴趣的就绪IO事件
                         processSelectedKeys();
                     } finally {
+                        //运行所有普通任务和定时任务，不限制时间
                         // Ensure we always run tasks.
                         final long ioTime = System.nanoTime() - ioStartTime;
                         ranTasks = runAllTasks(ioTime * (100 - ioRatio) / ioRatio);
@@ -778,6 +800,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
+    //通过Nio Selector唤醒
     @Override
     protected void wakeup(boolean inEventLoop) {
         if (!inEventLoop && nextWakeupNanos.getAndSet(AWAKE) != AWAKE) {
@@ -801,6 +824,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         return unwrappedSelector;
     }
 
+    // 立即( 无阻塞 )返回 Channel 新增的感兴趣的就绪 IO 事件数量
     int selectNow() throws IOException {
         return selector.selectNow();
     }
