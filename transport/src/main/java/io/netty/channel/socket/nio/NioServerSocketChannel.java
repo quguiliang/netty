@@ -131,6 +131,7 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         return SocketUtils.localSocketAddress(javaChannel().socket());
     }
 
+    //绑定服务端端口
     @SuppressJava6Requirement(reason = "Usage guarded by java version check")
     @Override
     protected void doBind(SocketAddress localAddress) throws Exception {
@@ -146,18 +147,21 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         javaChannel().close();
     }
 
+    //读取客户端的连接到方法参数 buf 中
     @Override
     protected int doReadMessages(List<Object> buf) throws Exception {
-        SocketChannel ch = SocketUtils.accept(javaChannel());
+        // 接受客户端连接
+        SocketChannel ch = SocketUtils.accept(javaChannel()); //这里的accept()会立即返回，返回jdk底层nio创建的一条Channel
 
         try {
+            // 创建 Netty NioSocketChannel 对象
             if (ch != null) {
-                buf.add(new NioSocketChannel(this, ch));
+                buf.add(new NioSocketChannel(this, ch)); //Netty将Channel封装到NioSocketChannel，并添加到list中，这样外部就可以遍历list做后续处理
                 return 1;
             }
         } catch (Throwable t) {
             logger.warn("Failed to create a new channel from an accepted socket.", t);
-
+            // 发生异常，关闭客户端的 SocketChannel 连接
             try {
                 ch.close();
             } catch (Throwable t2) {
