@@ -111,11 +111,13 @@ public final class SocketUtils {
         }
     }
 
+    //接受客户端连接
     public static SocketChannel accept(final ServerSocketChannel serverSocketChannel) throws IOException {
         try {
             return AccessController.doPrivileged(new PrivilegedExceptionAction<SocketChannel>() {
                 @Override
                 public SocketChannel run() throws IOException {
+                    //调用 ServerSocketChannel#accept() 方法，接受客户端连接
                     return serverSocketChannel.accept();
                 }
             });

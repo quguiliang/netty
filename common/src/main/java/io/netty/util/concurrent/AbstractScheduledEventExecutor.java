@@ -28,6 +28,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Abstract base class for {@link EventExecutor}s that want to support scheduling.
+ *
+ * 支持定时任务的EventExecutor的抽象类
  */
 public abstract class AbstractScheduledEventExecutor extends AbstractEventExecutor {
     private static final Comparator<ScheduledFutureTask<?>> SCHEDULED_FUTURE_TASK_COMPARATOR =
@@ -43,6 +45,7 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
        public void run() { } // Do nothing
     };
 
+   //定时任务队列
     PriorityQueue<ScheduledFutureTask<?>> scheduledTaskQueue;
 
     long nextTaskId;
@@ -253,6 +256,7 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
 
     private <V> ScheduledFuture<V> schedule(final ScheduledFutureTask<V> task) {
         if (inEventLoop()) {
+            //添加到定时任务队列
             scheduleFromEventLoop(task);
         } else {
             final long deadlineNanos = task.deadlineNanos();

@@ -53,6 +53,8 @@ public final class MathUtil {
     }
 
     /**
+     * 只要有负数，就是越界
+     *
      * Determine if the requested {@code index} and {@code length} will fit within {@code capacity}.
      * @param index The starting index.
      * @param length The length which will be utilized (starting from {@code index}).

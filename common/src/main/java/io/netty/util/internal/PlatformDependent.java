@@ -187,6 +187,7 @@ public final class PlatformDependent {
 
         MAYBE_SUPER_USER = maybeSuperUser0();
 
+        //根据JDK不同版本调用不同的实现
         if (!isAndroid()) {
             // only direct to method if we are not running on android.
             // See https://github.com/netty/netty/issues/2604
@@ -441,6 +442,8 @@ public final class PlatformDependent {
      * Creates a new fastest {@link LongCounter} implementation for the current platform.
      */
     public static LongCounter newLongCounter() {
+        //JDK >=8 使用 java.util.concurrent.atomic.LongAdder ，
+        // JDK <7 使用 java.util.concurrent.atomic.AtomicLong
         if (javaVersion() >= 8) {
             return new LongAdderCounter();
         } else {
@@ -485,6 +488,7 @@ public final class PlatformDependent {
         CLEANER.freeDirectBuffer(buffer);
     }
 
+    // 获得 ByteBuffer 对象的起始内存地址
     public static long directBufferAddress(ByteBuffer buffer) {
         return PlatformDependent0.directBufferAddress(buffer);
     }

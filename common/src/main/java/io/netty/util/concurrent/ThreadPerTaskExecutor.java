@@ -29,6 +29,7 @@ public final class ThreadPerTaskExecutor implements Executor {
 
     @Override
     public void execute(Runnable command) {
+        //调用DefaultThreadFactory#newThread()；DefaultThreadFactory 工厂类创建的线程默认就是 FastThreadLocalThread 类型
         threadFactory.newThread(command).start();
     }
 }

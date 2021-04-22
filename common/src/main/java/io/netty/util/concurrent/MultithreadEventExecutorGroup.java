@@ -72,26 +72,33 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             throw new IllegalArgumentException(String.format("nThreads: %d (expected: > 0)", nThreads));
         }
 
+        //创建执行器； 执行器默认是ThreadPerTaskExecutor；
         if (executor == null) {
             executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
         }
 
+        //创建EventExecutor数组
         children = new EventExecutor[nThreads];
 
         for (int i = 0; i < nThreads; i ++) {
-            boolean success = false;
+            boolean success = false; //是否创建成功
             try {
+                //创建EventExecutor对象
                 children[i] = newChild(executor, args);
+                //标记成功
                 success = true;
             } catch (Exception e) {
+                // 创建失败，抛出 IllegalStateException 异常
                 // TODO: Think about if this is a good exception type
                 throw new IllegalStateException("failed to create a child event loop", e);
             } finally {
+                // 创建失败，关闭所有已创建的EventExecutor
                 if (!success) {
+                    //关闭所有已创建的 EventExecutor
                     for (int j = 0; j < i; j ++) {
                         children[j].shutdownGracefully();
                     }
-
+                    //确保所有已创建的EventExecutor已关闭
                     for (int j = 0; j < i; j ++) {
                         EventExecutor e = children[j];
                         try {

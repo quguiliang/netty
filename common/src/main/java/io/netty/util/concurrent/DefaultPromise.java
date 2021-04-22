@@ -172,6 +172,7 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
         return ((CauseHolder) result).cause;
     }
 
+    //添加监听
     @Override
     public Promise<V> addListener(GenericFutureListener<? extends Future<? super V>> listener) {
         checkNotNull(listener, "listener");
