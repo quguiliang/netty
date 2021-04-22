@@ -115,6 +115,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
             if (bytes == attemptedBytesRead()) {
                 record(bytes);
             }
+            // DefaultMaxMessagesRecvByteBufAllocator.MaxMessageHandle#lastBytesRead(bytes)
             super.lastBytesRead(bytes);
         }
 

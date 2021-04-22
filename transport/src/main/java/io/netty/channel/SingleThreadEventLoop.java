@@ -139,6 +139,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         return tailTasks.remove(ObjectUtil.checkNotNull(task, "task"));
     }
 
+    //什么样的任务会添加到tailTasks中？
     @Override
     protected void afterRunningAllTasks() {
         runAllTasksFrom(tailTasks);

@@ -178,17 +178,25 @@ import java.lang.annotation.Target;
 public interface ChannelHandler {
 
     /**
+     * ChannelHandler 已经成功被添加到 ChannelPipeline 中，可以进行处理事件。
+     * 该方法，一般用于 ChannelHandler 的初始化的逻辑
+     *
      * Gets called after the {@link ChannelHandler} was added to the actual context and it's ready to handle events.
      */
     void handlerAdded(ChannelHandlerContext ctx) throws Exception;
 
     /**
+     * ChannelHandler 已经成功从 ChannelPipeline 中被移除，不再进行处理事件。
+     * 该方法，一般用于 ChannelHandler 的销毁的逻辑
+     *
      * Gets called after the {@link ChannelHandler} was removed from the actual context and it doesn't handle events
      * anymore.
      */
     void handlerRemoved(ChannelHandlerContext ctx) throws Exception;
 
     /**
+     * 抓取到异常。目前被废弃，移到 ChannelInboundHandler 接口中，作为对 Exception Inbound 事件的处理
+     *
      * Gets called if a {@link Throwable} was thrown.
      *
      * @deprecated if you want to handle this event you should implement {@link ChannelInboundHandler} and
@@ -208,6 +216,8 @@ public interface ChannelHandler {
      * <p>
      * This annotation is provided for documentation purpose, just like
      * <a href="http://www.javaconcurrencyinpractice.com/annotations/doc/">the JCIP annotations</a>.
+     *
+     * @Sharable 注解，ChannelHandler 是否可共享，即是否可以被多次添加。
      */
     @Inherited
     @Documented

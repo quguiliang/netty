@@ -126,6 +126,8 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return channel().config().getAllocator();
     }
 
+    //如果未设置子执行器，则使用 Channel 的 EventLoop 作为执行器。
+    // 😈 一般情况下，我们可以忽略子执行器的逻辑，也就是说，可以直接认为是使用 Channel 的 EventLoop 作为执行器
     @Override
     public EventExecutor executor() {
         if (executor == null) {
@@ -206,12 +208,16 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     @Override
     public ChannelHandlerContext fireChannelActive() {
+        // 获得下一个 Inbound 节点的执行器
+        // 调用下一个 Inbound 节点的 Channel active 方法
         invokeChannelActive(findContextInbound(MASK_CHANNEL_ACTIVE));
         return this;
     }
 
     static void invokeChannelActive(final AbstractChannelHandlerContext next) {
+        // 获得下一个 Inbound 节点的执行器
         EventExecutor executor = next.executor();
+        // 调用下一个 Inbound 节点的 ChannelActive 方法
         if (executor.inEventLoop()) {
             next.invokeChannelActive();
         } else {
@@ -225,13 +231,15 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     private void invokeChannelActive() {
-        if (invokeHandler()) {
+        if (invokeHandler()) { // 判断是否符合的 ChannelHandler
             try {
+                // 调用该 ChannelHandler 的 ChannelActive 方法
                 ((ChannelInboundHandler) handler()).channelActive(this);
             } catch (Throwable t) {
-                invokeExceptionCaught(t);
+                invokeExceptionCaught(t);   // 通知 Inbound 事件的传播，发生异常
             }
         } else {
+            // 跳过，传播 Inbound 事件给下一个节点
             fireChannelActive();
         }
     }
@@ -480,13 +488,17 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     @Override
     public ChannelFuture bind(final SocketAddress localAddress, final ChannelPromise promise) {
         ObjectUtil.checkNotNull(localAddress, "localAddress");
+        // 判断是否为合法的 Promise 对象
         if (isNotValidPromise(promise, false)) {
             // cancelled
             return promise;
         }
 
+        // 获得下一个 Outbound 节点
         final AbstractChannelHandlerContext next = findContextOutbound(MASK_BIND);
+        // 获得下一个 Outbound 节点的执行器
         EventExecutor executor = next.executor();
+        // 调用下一个 Outbound 节点的 bind 方法
         if (executor.inEventLoop()) {
             next.invokeBind(localAddress, promise);
         } else {
@@ -501,13 +513,15 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     private void invokeBind(SocketAddress localAddress, ChannelPromise promise) {
-        if (invokeHandler()) {
+        if (invokeHandler()) { // 判断是否符合的 ChannelHandler
             try {
+                // 调用该 ChannelHandler 的 bind 方法
                 ((ChannelOutboundHandler) handler()).bind(this, localAddress, promise);
             } catch (Throwable t) {
-                notifyOutboundHandlerException(t, promise);
+                notifyOutboundHandlerException(t, promise); // 通知 Outbound 事件的传播，发生异常
             }
         } else {
+            // 跳过，传播 Outbound 事件给下一个节点
             bind(localAddress, promise);
         }
     }
@@ -692,9 +706,10 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    //从 AbstractChannelHandlerContext 抽象类继承
     @Override
     public ChannelFuture write(Object msg) {
-        return write(msg, newPromise());
+        return write(msg, newPromise()); //创建 Promise 对象
     }
 
     @Override
@@ -722,15 +737,21 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     @Override
     public ChannelHandlerContext flush() {
+        // 获得下一个 Outbound 节点
         final AbstractChannelHandlerContext next = findContextOutbound(MASK_FLUSH);
         EventExecutor executor = next.executor();
+        // 在 EventLoop 的线程中
         if (executor.inEventLoop()) {
+            // 执行 flush 事件到下一个节点
             next.invokeFlush();
         } else {
+            // 不在 EventLoop 的线程中
+            // 创建 flush 任务
             Tasks tasks = next.invokeTasks;
             if (tasks == null) {
                 next.invokeTasks = tasks = new Tasks(next);
             }
+            // 提交到 EventLoop 的线程中，执行该任务
             safeExecute(executor, tasks.invokeFlushTask, channel().voidPromise(), null, false);
         }
 
@@ -761,38 +782,51 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     void invokeWriteAndFlush(Object msg, ChannelPromise promise) {
         if (invokeHandler()) {
+            // 执行 write 事件到下一个节点
             invokeWrite0(msg, promise);
+            // 执行 flush 事件到下一个节点
             invokeFlush0();
         } else {
             writeAndFlush(msg, promise);
         }
     }
 
+    //随着 write 或 writeAndFlush 事件不断的向下一个节点传播，最终会到达 HeadContext 节点
     private void write(Object msg, boolean flush, ChannelPromise promise) {
+        // 消息( 数据 )为空，抛出异常
         ObjectUtil.checkNotNull(msg, "msg");
         try {
+            // 判断是否为合法的 Promise 对象
             if (isNotValidPromise(promise, true)) {
+                // 释放消息( 数据 )相关的资源
                 ReferenceCountUtil.release(msg);
                 // cancelled
                 return;
             }
         } catch (RuntimeException e) {
+            // 发生异常，释放消息( 数据 )相关的资源
             ReferenceCountUtil.release(msg);
             throw e;
         }
-
+        // 获得下一个 Outbound 节点
         final AbstractChannelHandlerContext next = findContextOutbound(flush ?
                 (MASK_WRITE | MASK_FLUSH) : MASK_WRITE);
+        // 记录 Record 记录
         final Object m = pipeline.touch(msg, next);
         EventExecutor executor = next.executor();
+        // 在 EventLoop 的线程中
         if (executor.inEventLoop()) {
             if (flush) {
+                // 执行 writeAndFlush 事件到下一个节点
                 next.invokeWriteAndFlush(m, promise);
             } else {
+                // 执行 write 事件到下一个节点
                 next.invokeWrite(m, promise);
             }
         } else {
+            // 创建 write 任务
             final WriteTask task = WriteTask.newInstance(next, m, promise, flush);
+            // 提交到 EventLoop 的线程中，执行该任务
             if (!safeExecute(executor, task, promise, m, !flush)) {
                 // We failed to submit the WriteTask. We need to cancel it so we decrement the pending bytes
                 // and put it back in the Recycler for re-use later.
@@ -808,6 +842,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return writeAndFlush(msg, newPromise());
     }
 
+    // 通知 Outbound 事件的传播，发生异常
     private static void notifyOutboundHandlerException(Throwable cause, ChannelPromise promise) {
         // Only log if the given promise is not of type VoidChannelPromise as tryFailure(...) is expected to return
         // false.
@@ -873,7 +908,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return false;
     }
 
+    //获得下一个 Inbound 节点的执行器
     private AbstractChannelHandlerContext findContextInbound(int mask) {
+        // 循环，向后获得一个 Inbound 节点
         AbstractChannelHandlerContext ctx = this;
         EventExecutor currentExecutor = executor();
         do {
@@ -883,6 +920,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     private AbstractChannelHandlerContext findContextOutbound(int mask) {
+        // 循环，向前获得一个 Outbound 节点
         AbstractChannelHandlerContext ctx = this;
         EventExecutor currentExecutor = executor();
         do {
@@ -939,6 +977,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    //这里会回调用户在Handler中自定义的handlerRemoved(ctx)方法
     final void callHandlerRemoved() throws Exception {
         try {
             // Only call handlerRemoved(...) if we called handlerAdded(...) before.
@@ -946,6 +985,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
                 handler().handlerRemoved(this);
             }
         } finally {
+            //将该节点的状态设置为removed
             // Mark the handler as removed in any case.
             setRemoved();
         }
@@ -980,9 +1020,11 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return channel().hasAttr(key);
     }
 
+    //如果不在 EventLoop 的线程中，会调用 #safeExecute()方法，提交到EventLoop的线程中执行
     private static boolean safeExecute(EventExecutor executor, Runnable runnable,
             ChannelPromise promise, Object msg, boolean lazy) {
         try {
+            // 提交 EventLoop 的线程中，进行执行任务
             if (lazy && executor instanceof AbstractEventExecutor) {
                 ((AbstractEventExecutor) executor).lazyExecute(runnable);
             } else {
@@ -991,10 +1033,12 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             return true;
         } catch (Throwable cause) {
             try {
+                // 释放 msg 相关的资源
                 if (msg != null) {
                     ReferenceCountUtil.release(msg);
                 }
             } finally {
+                // 发生异常，回调通知 promise 相关的异常
                 promise.setFailure(cause);
             }
             return false;
@@ -1015,28 +1059,56 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         private static final ObjectPool<WriteTask> RECYCLER = ObjectPool.newPool(new ObjectCreator<WriteTask>() {
             @Override
             public WriteTask newObject(Handle<WriteTask> handle) {
-                return new WriteTask(handle);
+                return new WriteTask(handle); // 创建 WriteTask 对象
             }
         });
 
         static WriteTask newInstance(AbstractChannelHandlerContext ctx,
                 Object msg, ChannelPromise promise, boolean flush) {
+            // 从 Recycler 的对象池中获得 WriteTask 对象
             WriteTask task = RECYCLER.get();
+            // 初始化 WriteTask 对象的属性
             init(task, ctx, msg, promise, flush);
             return task;
         }
 
+        /**
+         * 提交任务时，是否计算 AbstractWriteTask 对象的自身占用内存大小
+         */
         private static final boolean ESTIMATE_TASK_SIZE_ON_SUBMIT =
                 SystemPropertyUtil.getBoolean("io.netty.transport.estimateSizeOnSubmit", true);
 
+        /**
+         * 每个 AbstractWriteTask 对象自身占用内存的大小。
+         * -XX:+UseCompressedOops（JDK 8下默认为启用）；在64位系统中使用32位系统下引用的大小，也就是说，在64系统下回压缩普通对象的指针大小以节约内存占用的大小。
+         * +----------------------------+
+         * |    obj header(12 BYTES)    |
+         * +----------------------------+
+         * |  4 ref fields(pre 4 BYTES) |
+         * +-------------------------- -+
+         * |  one int field (4 BYTES)   |
+         * +----------------------------+
+         */
         // Assuming compressed oops, 12 bytes obj header, 4 ref fields and one int field
         private static final int WRITE_TASK_OVERHEAD =
                 SystemPropertyUtil.getInt("io.netty.transport.writeTaskSizeOverhead", 32);
-
+        // Recycler 处理器。而 Recycler 是 Netty 用来实现对象池的工具类。在网络通信中，写入是非常频繁的操作，因此通过 Recycler 重用 AbstractWriteTask 对象，减少对象的频繁创建，降低 GC 压力，提升性能。
         private final Handle<WriteTask> handle;
+        /**
+         * pipeline 中的节点
+         */
         private AbstractChannelHandlerContext ctx;
+        /**
+         * 消息( 数据 )
+         */
         private Object msg;
+        /**
+         * Promise 对象
+         */
         private ChannelPromise promise;
+        /**
+         * 对象大小
+         */
         private int size; // sign bit controls flush
 
         @SuppressWarnings("unchecked")
@@ -1044,14 +1116,16 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             this.handle = (Handle<WriteTask>) handle;
         }
 
+        //初始化 WriteTask对象
         protected static void init(WriteTask task, AbstractChannelHandlerContext ctx,
                                    Object msg, ChannelPromise promise, boolean flush) {
             task.ctx = ctx;
             task.msg = msg;
             task.promise = promise;
-
+            // 计算 AbstractWriteTask 对象大小 <1>
             if (ESTIMATE_TASK_SIZE_ON_SUBMIT) {
                 task.size = ctx.pipeline.estimatorHandle().size(msg) + WRITE_TASK_OVERHEAD;
+                // 增加 ChannelOutboundBuffer 的 totalPendingSize 属性  <2> DefaultChannelPipeline#incrementPendingOutboundBytes()
                 ctx.pipeline.incrementPendingOutboundBytes(task.size);
             } else {
                 task.size = 0;
@@ -1064,7 +1138,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         @Override
         public void run() {
             try {
+                // 减少 ChannelOutboundBuffer 的 totalPendingSize 属性 <1>
                 decrementPendingOutboundBytes();
+                // 执行 write 事件到下一个节点
                 if (size >= 0) {
                     ctx.invokeWrite(msg, promise);
                 } else {
@@ -1090,10 +1166,12 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
 
         private void recycle() {
+            // 置空，help gc
             // Set to null so the GC can collect them directly
             ctx = null;
             msg = null;
             promise = null;
+            // 回收对象
             handle.recycle(this);
         }
     }

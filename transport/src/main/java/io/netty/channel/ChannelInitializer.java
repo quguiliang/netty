@@ -56,10 +56,16 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ChannelInitializer.class);
     // We use a Set as a ChannelInitializer is usually shared between all Channels in a Bootstrap /
     // ServerBootstrap. This way we can reduce the memory usage compared to use Attributes.
+    /**
+     * 由于 ChannelInitializer 可以在 Bootstrap/ServerBootstrap 的所有通道中共享，所以我们用一个 ConcurrentMap 作为初始化器。
+     * 这种方式，相对于使用 {@link io.netty.util.Attribute} 方式，减少了内存的使用。
+     */
     private final Set<ChannelHandlerContext> initMap = Collections.newSetFromMap(
             new ConcurrentHashMap<ChannelHandlerContext, Boolean>());
 
     /**
+     * 执行行自定义的初始化操作
+     *
      * This method will be called once the {@link Channel} was registered. After the method returns this instance
      * will be removed from the {@link ChannelPipeline} of the {@link Channel}.
      *
@@ -70,19 +76,27 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
      */
     protected abstract void initChannel(C ch) throws Exception;
 
+    /**
+     * 在Channel注册到EventLoop上后，会触发Channel Registered事件
+     * @param ctx
+     * @throws Exception
+     */
     @Override
     @SuppressWarnings("unchecked")
     public final void channelRegistered(ChannelHandlerContext ctx) throws Exception {
         // Normally this method will never be called as handlerAdded(...) should call initChannel(...) and remove
         // the handler.
+        //初始化Channel
         if (initChannel(ctx)) {
             // we called initChannel(...) so we need to call now pipeline.fireChannelRegistered() to ensure we not
             // miss an event.
+            // <2.1> 重新触发Channel Registered事件
             ctx.pipeline().fireChannelRegistered();
 
             // We are done with init the Channel, removing all the state for the Channel now.
             removeState(ctx);
         } else {
+            // <2.2> 继续向下一个节点的 Channel Registered 事件
             // Called initChannel(...) before which is the expected behavior, so just forward the event.
             ctx.fireChannelRegistered();
         }
@@ -104,7 +118,7 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
      */
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
-        if (ctx.channel().isRegistered()) {
+        if (ctx.channel().isRegistered()) { // 已注册
             // This should always be true with our current DefaultChannelPipeline implementation.
             // The good thing about calling initChannel(...) in handlerAdded(...) is that there will be no ordering
             // surprises if a ChannelInitializer will add another ChannelInitializer. This is as all handlers

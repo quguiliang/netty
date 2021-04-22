@@ -47,9 +47,11 @@ public class DefaultChannelPipeline implements ChannelPipeline {
 
     static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultChannelPipeline.class);
 
+    //head的名字
     private static final String HEAD_NAME = generateName0(HeadContext.class);
+    //tail的名字
     private static final String TAIL_NAME = generateName0(TailContext.class);
-
+    //名字缓存，基于 ThreadLocal ，用于生成在线程中唯一的名字。
     private static final FastThreadLocal<Map<Class<?>, String>> nameCaches =
             new FastThreadLocal<Map<Class<?>, String>>() {
         @Override
@@ -58,6 +60,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         }
     };
 
+    //estimatorHandle的原子更新器
     private static final AtomicReferenceFieldUpdater<DefaultChannelPipeline, MessageSizeEstimator.Handle> ESTIMATOR =
             AtomicReferenceFieldUpdater.newUpdater(
                     DefaultChannelPipeline.class, MessageSizeEstimator.Handle.class, "estimatorHandle");
@@ -112,22 +115,28 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return handle;
     }
 
+    //记录 Record 记录
     final Object touch(Object msg, AbstractChannelHandlerContext next) {
         return touch ? ReferenceCountUtil.touch(msg, next) : msg;
     }
 
+    //创建 DefaultChannelHandlerContext 节点
     private AbstractChannelHandlerContext newContext(EventExecutorGroup group, String name, ChannelHandler handler) {
         return new DefaultChannelHandlerContext(this, childExecutor(group), name, handler);
     }
 
+    //创建子执行器
     private EventExecutor childExecutor(EventExecutorGroup group) {
+        // <1> 不创建子执行器，使用Channel注册的EventLoop作为执行器；日常使用中，基本都是这种情况
         if (group == null) {
             return null;
         }
+        // 根据配置项 SINGLE_EVENTEXECUTOR_PER_GROUP ，每个 Channel 从 EventExecutorGroup 获得不同 EventExecutor 执行器
         Boolean pinEventExecutor = channel.config().getOption(ChannelOption.SINGLE_EVENTEXECUTOR_PER_GROUP);
         if (pinEventExecutor != null && !pinEventExecutor) {
             return group.next();
         }
+        // 通过 childExecutors 缓存实现，一个 Channel 从 EventExecutorGroup 获得相同 EventExecutor 执行器
         Map<EventExecutorGroup, EventExecutor> childExecutors = this.childExecutors;
         if (childExecutors == null) {
             // Use size of 4 as most people only use one extra EventExecutor.
@@ -195,14 +204,16 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return addLast(null, name, handler);
     }
 
+    //添加Handler到Pipeline中
     @Override
     public final ChannelPipeline addLast(EventExecutorGroup group, String name, ChannelHandler handler) {
         final AbstractChannelHandlerContext newCtx;
-        synchronized (this) {
+        synchronized (this) { //使用 synchronized 方法是为了防止多线程并发操作pipeline底层的双向链表
+            //1、检查是否有重复handler
             checkMultiplicity(handler);
-
+            //2、创建节点
             newCtx = newContext(group, filterName(name, handler), handler);
-
+            //3、添加节点
             addLast0(newCtx);
 
             // If the registered is false it means that the channel was not registered on an eventLoop yet.
@@ -220,10 +231,12 @@ public class DefaultChannelPipeline implements ChannelPipeline {
                 return this;
             }
         }
+        //回调用户方法
         callHandlerAdded0(newCtx);
         return this;
     }
 
+    //添加到tail节点之前
     private void addLast0(AbstractChannelHandlerContext newCtx) {
         AbstractChannelHandlerContext prev = tail.prev;
         newCtx.prev = prev;
@@ -277,9 +290,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         ctx.prev = newCtx;
     }
 
+    //给handler创建一个唯一性的名字
     private String filterName(String name, ChannelHandler handler) {
         if (name == null) {
-            return generateName(handler);
+            return generateName(handler);   //handler的名字为Null，则自动生成一个名字
         }
         checkDuplicateName(name);
         return name;
@@ -385,14 +399,17 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     }
 
     private String generateName(ChannelHandler handler) {
+        //先检查缓存中是否有生成过默认name
         Map<Class<?>, String> cache = nameCaches.get();
         Class<?> handlerType = handler.getClass();
         String name = cache.get(handlerType);
+        //没有生成过，就生成一个默认name，加入缓存
         if (name == null) {
             name = generateName0(handlerType);
             cache.put(handlerType, name);
         }
 
+        //生成完了，还要看默认name有没有冲突
         // It's not very likely for a user to put more than one handler of the same type, but make sure to avoid
         // any name conflicts.  Note that we don't cache the names generated here.
         if (context0(name) != null) {
@@ -412,6 +429,12 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return StringUtil.simpleClassName(handlerType) + "#0";
     }
 
+    /**
+     * 删除Hander，分为三步：
+     * 1、找到待删除的节点
+     * 2、调整双向链表指针删除
+     * 3、回调用户函数
+     */
     @Override
     public final ChannelPipeline remove(ChannelHandler handler) {
         remove(getContextOrDie(handler));
@@ -449,12 +472,15 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return (T) remove((AbstractChannelHandlerContext) ctx).handler();
     }
 
+    //调整双向链表指针删除
     private AbstractChannelHandlerContext remove(final AbstractChannelHandlerContext ctx) {
         assert ctx != head && ctx != tail;
 
-        synchronized (this) {
+        synchronized (this) { // 同步，为了防止多线程并发操作 pipeline 底层的双向链表
+            //2、调整双向链表指针删除
             atomicRemoveFromHandlerList(ctx);
 
+            // pipeline 暂未注册，添加回调。再注册完成后，执行回调。详细解析，见 {@link #callHandlerCallbackLater} 方法
             // If the registered is false it means that the channel was not registered on an eventloop yet.
             // In this case we remove the context from the pipeline and add a task that will call
             // ChannelHandler.handlerRemoved(...) once the channel is registered.
@@ -463,11 +489,14 @@ public class DefaultChannelPipeline implements ChannelPipeline {
                 return ctx;
             }
 
+            // 不在 EventLoop 的线程中，提交 EventLoop 中，执行回调用户方法
             EventExecutor executor = ctx.executor();
             if (!executor.inEventLoop()) {
                 executor.execute(new Runnable() {
                     @Override
                     public void run() {
+                        //3、回调用户函数
+                        // 提交 EventLoop 中，执行回调 ChannelHandler removed 事件
                         callHandlerRemoved0(ctx);
                     }
                 });
@@ -479,6 +508,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     }
 
     /**
+     * 双向链表的删除
      * Method is synchronized to make the handler removal from the double linked list atomic.
      */
     private synchronized void atomicRemoveFromHandlerList(AbstractChannelHandlerContext ctx) {
@@ -592,6 +622,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         oldCtx.next = newCtx;
     }
 
+    //在用户代码添加一条handler时，首先会检查handler有没有添加过
     private static void checkMultiplicity(ChannelHandler handler) {
         if (handler instanceof ChannelHandlerAdapter) {
             ChannelHandlerAdapter h = (ChannelHandlerAdapter) handler;
@@ -600,18 +631,21 @@ public class DefaultChannelPipeline implements ChannelPipeline {
                         h.getClass().getName() +
                         " is not a @Sharable handler, so can't be added or removed multiple times.");
             }
-            h.added = true;
+            h.added = true; //netty使用added标识一个channel是否已经添加；
         }
     }
 
+    //执行Handler添加完成后的回调方法
     private void callHandlerAdded0(final AbstractChannelHandlerContext ctx) {
         try {
+            // 回调 ChannelHandler 添加完成(added)事件
             ctx.callHandlerAdded();
         } catch (Throwable t) {
+            // 发生异常，移除该节点
             boolean removed = false;
             try {
-                atomicRemoveFromHandlerList(ctx);
-                ctx.callHandlerRemoved();
+                atomicRemoveFromHandlerList(ctx); // 移除
+                ctx.callHandlerRemoved(); // 回调 ChannelHandler 移除完成( removed )事件
                 removed = true;
             } catch (Throwable t2) {
                 if (logger.isWarnEnabled()) {
@@ -713,18 +747,20 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return context0(ObjectUtil.checkNotNull(name, "name"));
     }
 
+    //查找Handler对应的上下文
     @Override
     public final ChannelHandlerContext context(ChannelHandler handler) {
         ObjectUtil.checkNotNull(handler, "handler");
 
         AbstractChannelHandlerContext ctx = head.next;
+        // 循环，获得指定 ChannelHandler 对象的节点
         for (;;) {
 
             if (ctx == null) {
                 return null;
             }
 
-            if (ctx.handler() == handler) {
+            if (ctx.handler() == handler) { // ChannelHandler 相等
                 return ctx;
             }
 
@@ -892,7 +928,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
 
     @Override
     public final ChannelPipeline fireChannelActive() {
-        AbstractChannelHandlerContext.invokeChannelActive(head);
+        AbstractChannelHandlerContext.invokeChannelActive(head); // Inbound 事件在 Pipeline 中传输方向是 head( 头 ) -> tail( 尾 )
         return this;
     }
 
@@ -968,6 +1004,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return this;
     }
 
+    //Outbound 事件在 Pipeline 中的传输方向是 tail -> head；bind事件最终传递到HeadContext中
     @Override
     public final ChannelFuture bind(SocketAddress localAddress, ChannelPromise promise) {
         return tail.bind(localAddress, promise);
@@ -1005,6 +1042,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return this;
     }
 
+    //会调用 TailContext#write(Object msg, ...) 方法，将 write 事件在 pipeline 中，从尾节点向头节点传播；TailContext从AbstractChannelHandlerContext 继承过来的write()方法
     @Override
     public final ChannelFuture write(Object msg) {
         return tail.write(msg);
@@ -1050,12 +1088,14 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return voidPromise;
     }
 
+    //判断Handler的名字是否重复
     private void checkDuplicateName(String name) {
         if (context0(name) != null) {
             throw new IllegalArgumentException("Duplicate handler name: " + name);
         }
     }
 
+    //检查name是否和已有的name有冲突，查找pipeline里面有没有对应的context
     private AbstractChannelHandlerContext context0(String name) {
         AbstractChannelHandlerContext context = head.next;
         while (context != tail) {
@@ -1076,6 +1116,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         }
     }
 
+    //找到待删除的节点; 获得对应的 AbstractChannelHandlerContext 节点
     private AbstractChannelHandlerContext getContextOrDie(ChannelHandler handler) {
         AbstractChannelHandlerContext ctx = (AbstractChannelHandlerContext) context(handler);
         if (ctx == null) {
@@ -1149,11 +1190,13 @@ public class DefaultChannelPipeline implements ChannelPipeline {
      */
     protected void onUnhandledInboundException(Throwable cause) {
         try {
+            // 打印告警日志
             logger.warn(
                     "An exceptionCaught() event was fired, and it reached at the tail of the pipeline. " +
                             "It usually means the last handler in the pipeline did not handle the exception.",
                     cause);
         } finally {
+            // 调用 ReferenceCountUtil#release(Object msg) 方法，释放和异常相关的资源。
             ReferenceCountUtil.release(cause);
         }
     }
@@ -1183,6 +1226,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
                     "Discarded inbound message {} that reached at the tail of the pipeline. " +
                             "Please check your pipeline configuration.", msg);
         } finally {
+            //最终会释放ByteBuf对象
             ReferenceCountUtil.release(msg);
         }
     }
@@ -1225,6 +1269,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     protected void onUnhandledChannelWritabilityChanged() {
     }
 
+    //增加 ChannelOutboundBuffer 的 totalPendingSize 属性
     @UnstableApi
     protected void incrementPendingOutboundBytes(long size) {
         ChannelOutboundBuffer buffer = channel.unsafe().outboundBuffer();
@@ -1260,9 +1305,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         @Override
         public void channelUnregistered(ChannelHandlerContext ctx) { }
 
+        //Channel的active事件从 head -> tail
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
-            onUnhandledInboundChannelActive();
+            onUnhandledInboundChannelActive(); //一个空方法
         }
 
         @Override
@@ -1328,12 +1374,15 @@ public class DefaultChannelPipeline implements ChannelPipeline {
             // NOOP
         }
 
+        //通过tail传递到head中的bind事件
         @Override
         public void bind(
                 ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) {
+            //unsafe是bind事件的处理者
             unsafe.bind(localAddress, promise);
         }
 
+        //在head中进行远程连接
         @Override
         public void connect(
                 ChannelHandlerContext ctx,
@@ -1347,6 +1396,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
             unsafe.disconnect(promise);
         }
 
+        // AbstractUnsafe#close() 方法，关闭 Channel；
         @Override
         public void close(ChannelHandlerContext ctx, ChannelPromise promise) {
             unsafe.close(promise);
@@ -1359,14 +1409,19 @@ public class DefaultChannelPipeline implements ChannelPipeline {
 
         @Override
         public void read(ChannelHandlerContext ctx) {
+            // AbstractUnsafe#beginRead()
             unsafe.beginRead();
         }
 
+        //在 pipeline 中，write 事件最终会到达 HeadContext 节点。
+        //而 HeadContext 的 #write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) 方法，会处理该事件
         @Override
         public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
+            //调用 AbstractUnsafe#write(Object msg, ChannelPromise promise)方法，将数据写到内存队列中
             unsafe.write(msg, promise);
         }
 
+        //刷新内存队列，将其中的数据写入到对端
         @Override
         public void flush(ChannelHandlerContext ctx) {
             unsafe.flush();
@@ -1395,8 +1450,9 @@ public class DefaultChannelPipeline implements ChannelPipeline {
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
+            // 传播 Channel active 事件给下一个 Inbound 节
             ctx.fireChannelActive();
-
+            // 执行 read 逻辑
             readIfIsAutoRead();
         }
 
@@ -1419,7 +1475,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
 
         private void readIfIsAutoRead() {
             if (channel.config().isAutoRead()) {
-                channel.read();
+                channel.read(); //AbstractChannel#read
             }
         }
 
@@ -1459,9 +1515,11 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         @Override
         void execute() {
             EventExecutor executor = ctx.executor();
+            // 在 EventLoop 的线程中，回调 ChannelHandler added 事件
             if (executor.inEventLoop()) {
                 callHandlerAdded0(ctx);
             } else {
+                // 提交 EventLoop 中，执行回调 ChannelHandler added 事件
                 try {
                     executor.execute(this);
                 } catch (RejectedExecutionException e) {
@@ -1491,9 +1549,11 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         @Override
         void execute() {
             EventExecutor executor = ctx.executor();
+            // 在 EventLoop 的线程中，回调 ChannelHandler removed 事件
             if (executor.inEventLoop()) {
                 callHandlerRemoved0(ctx);
             } else {
+                // 提交 EventLoop 中，执行回调 ChannelHandler removed 事件
                 try {
                     executor.execute(this);
                 } catch (RejectedExecutionException e) {

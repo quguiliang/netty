@@ -26,6 +26,7 @@ import java.util.Map;
  */
 public abstract class ChannelHandlerAdapter implements ChannelHandler {
 
+    //用于判断是否已经添加到pipeline中了
     // Not using volatile because it's used only for a sanity check.
     boolean added;
 

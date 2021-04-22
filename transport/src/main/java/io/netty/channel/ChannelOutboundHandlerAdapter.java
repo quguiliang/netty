@@ -22,6 +22,8 @@ import java.net.SocketAddress;
 /**
  * Skeleton implementation of a {@link ChannelOutboundHandler}. This implementation just forwards each method call via
  * the {@link ChannelHandlerContext}.
+ *
+ * 每个实现方法，直接转发到下一个节点，实际上也是默认无任何逻辑。子类如果有自定义的逻辑，可以进行覆写对应的方法。
  */
 public class ChannelOutboundHandlerAdapter extends ChannelHandlerAdapter implements ChannelOutboundHandler {
 
