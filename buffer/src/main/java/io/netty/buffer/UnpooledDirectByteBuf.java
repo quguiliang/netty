@@ -37,11 +37,15 @@ import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
  */
 public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
 
+    //ByteBuf 分配器对象
     private final ByteBufAllocator alloc;
 
     ByteBuffer buffer; // accessed by UnpooledUnsafeNoCleanerDirectByteBuf.reallocateDirect()
+    //临时 ByteBuffer 对象
     private ByteBuffer tmpNioBuf;
+    // 容量
     private int capacity;
+    // 是否需要释放
     private boolean doNotFree;
 
     /**
@@ -567,9 +571,10 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
         ByteBuffer tmpBuf = internalNioBuffer();
         tmpBuf.clear().position(index).limit(index + length);
         try {
-            return in.read(tmpBuf);
+            //读取数据到临时的 Java NIO ByteBuffer 中。
+            return in.read(tmpBuf); //在对端未断开时，返回的是读取数据的字节数。
         } catch (ClosedChannelException ignored) {
-            return -1;
+            return -1;  //在对端已断开时，返回 -1 ，表示断开
         }
     }
 
@@ -640,8 +645,10 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
             return;
         }
 
+        // 置空 buffer 属性
         this.buffer = null;
 
+        //释放Buffer对象
         if (!doNotFree) {
             freeDirect(buffer);
         }

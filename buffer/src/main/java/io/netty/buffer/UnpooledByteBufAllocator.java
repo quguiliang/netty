@@ -22,12 +22,26 @@ import io.netty.util.internal.StringUtil;
 import java.nio.ByteBuffer;
 
 /**
+ * 普通的 ByteBuf 的分配器，不基于内存池
+ *
  * Simplistic {@link ByteBufAllocator} implementation that does not pool anything.
  */
 public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
 
+    /**
+     * Metric
+     */
     private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();
+    /**
+     * 是否禁用内存泄露检测功能
+     */
     private final boolean disableLeakDetector;
+    /**
+     * 不使用 `io.netty.util.internal.Cleaner` 释放 Direct ByteBuf
+     *
+     * @see UnpooledUnsafeNoCleanerDirectByteBuf
+     * @see InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf
+     */
     private final boolean noCleaner;
 
     /**
@@ -77,6 +91,7 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
                 && PlatformDependent.hasDirectBufferNoCleanerConstructor();
     }
 
+    // 创建的是以 "Instrumented" 的 Heap ByteBuf 对象，因为要结合 Metric
     @Override
     protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
         return PlatformDependent.hasUnsafe() ?
@@ -117,19 +132,22 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
     public ByteBufAllocatorMetric metric() {
         return metric;
     }
-
+    // 增加 Direct
     void incrementDirect(int amount) {
         metric.directCounter.add(amount);
     }
 
+    // 减少 Direct
     void decrementDirect(int amount) {
         metric.directCounter.add(-amount);
     }
 
+    // 增加 Heap
     void incrementHeap(int amount) {
         metric.heapCounter.add(amount);
     }
 
+    // 减少 Heap
     void decrementHeap(int amount) {
         metric.heapCounter.add(-amount);
     }
@@ -246,8 +264,15 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
         }
     }
 
+    //UnpooledByteBufAllocatorMetric ，在 UnpooledByteBufAllocator 的内部静态类，实现 ByteBufAllocatorMetric 接口
     private static final class UnpooledByteBufAllocatorMetric implements ByteBufAllocatorMetric {
+        /**
+         * Direct ByteBuf 占用内存大小
+         */
         final LongCounter directCounter = PlatformDependent.newLongCounter();
+        /**
+         * Heap ByteBuf 占用内存大小
+         */
         final LongCounter heapCounter = PlatformDependent.newLongCounter();
 
         @Override

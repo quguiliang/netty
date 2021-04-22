@@ -31,6 +31,8 @@ import java.nio.channels.ScatteringByteChannel;
 import java.nio.charset.Charset;
 
 /**
+ * 用于装饰ByteBuf对象
+ *
  * Wraps another {@link ByteBuf}.
  *
  * It's important that the {@link #readerIndex()} and {@link #writerIndex()} will not do any adjustments on the
@@ -39,6 +41,7 @@ import java.nio.charset.Charset;
  */
 class WrappedByteBuf extends ByteBuf {
 
+    //被装饰的ByteBuf对象
     protected final ByteBuf buf;
 
     protected WrappedByteBuf(ByteBuf buf) {

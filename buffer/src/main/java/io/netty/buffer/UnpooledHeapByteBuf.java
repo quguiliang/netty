@@ -37,8 +37,17 @@ import static io.netty.util.internal.ObjectUtil.checkNotNull;
  */
 public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
 
+    /**
+     * ByteBuf 分配器对象
+     */
     private final ByteBufAllocator alloc;
+    /**
+     * 字节数组
+     */
     byte[] array;
+    /**
+     * 临时 ByteBuff 对象
+     */
     private ByteBuffer tmpNioBuf;
 
     /**
@@ -48,6 +57,7 @@ public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
      * @param maxCapacity the max capacity of the underlying byte array
      */
     public UnpooledHeapByteBuf(ByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        // 设置最大容量
         super(maxCapacity);
 
         if (initialCapacity > maxCapacity) {
@@ -56,7 +66,9 @@ public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
         }
 
         this.alloc = checkNotNull(alloc, "alloc");
+        // 创建并设置字节数组
         setArray(allocateArray(initialCapacity));
+        // 设置读写索引
         setIndex(0, 0);
     }
 
@@ -67,6 +79,7 @@ public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
      * @param maxCapacity the max capacity of the underlying byte array
      */
     protected UnpooledHeapByteBuf(ByteBufAllocator alloc, byte[] initialArray, int maxCapacity) {
+        // 设置最大容量
         super(maxCapacity);
 
         checkNotNull(alloc, "alloc");
@@ -81,6 +94,7 @@ public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
         setIndex(0, initialArray.length);
     }
 
+    //创建字节数组
     protected byte[] allocateArray(int initialCapacity) {
         return new byte[initialCapacity];
     }
@@ -89,6 +103,7 @@ public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
         // NOOP
     }
 
+    //设置 array 属性
     private void setArray(byte[] initialArray) {
         array = initialArray;
         tmpNioBuf = null;
@@ -125,14 +140,19 @@ public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
 
         int bytesToCopy;
         if (newCapacity > oldCapacity) {
+            // 扩容
             bytesToCopy = oldCapacity;
         } else {
+            // 缩容
             trimIndicesToCapacity(newCapacity);
             bytesToCopy = newCapacity;
         }
         byte[] newArray = allocateArray(newCapacity);
+        // 复制数据到新数组
         System.arraycopy(oldArray, 0, newArray, 0, bytesToCopy);
+        // 设置数组
         setArray(newArray);
+        // 释放老数组
         freeArray(oldArray);
         return this;
     }

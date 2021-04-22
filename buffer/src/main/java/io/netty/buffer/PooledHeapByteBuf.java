@@ -210,8 +210,11 @@ class PooledHeapByteBuf extends PooledByteBuf<byte[]> {
 
     @Override
     public final ByteBuf copy(int index, int length) {
+        //校验索引
         checkIndex(index, length);
+        //创建一个Heap ByteBuf对象
         ByteBuf copy = alloc().heapBuffer(length, maxCapacity());
+        //写入数据
         return copy.writeBytes(memory, idx(index), length);
     }
 
@@ -247,6 +250,7 @@ class PooledHeapByteBuf extends PooledByteBuf<byte[]> {
         throw new UnsupportedOperationException();
     }
 
+    //获取临时的ByteBuffer对象（tmpNioBuf）
     @Override
     protected final ByteBuffer newInternalNioBuffer(byte[] memory) {
         return ByteBuffer.wrap(memory);

@@ -27,6 +27,9 @@ import java.nio.ByteBuffer;
 
 final class PooledDirectByteBuf extends PooledByteBuf<ByteBuffer> {
 
+    /**
+     * 对象池
+     */
     private static final ObjectPool<PooledDirectByteBuf> RECYCLER = ObjectPool.newPool(
             new ObjectCreator<PooledDirectByteBuf>() {
         @Override
@@ -36,7 +39,9 @@ final class PooledDirectByteBuf extends PooledByteBuf<ByteBuffer> {
     });
 
     static PooledDirectByteBuf newInstance(int maxCapacity) {
+        //从对象池中获得PooledDirectByteBuf
         PooledDirectByteBuf buf = RECYCLER.get();
+        //重置PooledDirectByteBuf的属性
         buf.reuse(maxCapacity);
         return buf;
     }
@@ -45,9 +50,10 @@ final class PooledDirectByteBuf extends PooledByteBuf<ByteBuffer> {
         super(recyclerHandle, maxCapacity);
     }
 
+    //获取临时的ByteBuffer对象
     @Override
     protected ByteBuffer newInternalNioBuffer(ByteBuffer memory) {
-        return memory.duplicate();
+        return memory.duplicate(); //共享里面的数据
     }
 
     @Override
@@ -279,10 +285,19 @@ final class PooledDirectByteBuf extends PooledByteBuf<ByteBuffer> {
         return readBytes;
     }
 
+    /**
+     * 复制指定范围的数据到新创建的Direct ByteBuf对象
+     * @param index
+     * @param length
+     * @return
+     */
     @Override
     public ByteBuf copy(int index, int length) {
+        //校验索引
         checkIndex(index, length);
+        //创建一个 Direct ByteBuf 对象
         ByteBuf copy = alloc().directBuffer(length, maxCapacity());
+        //写入数据
         return copy.writeBytes(this, index, length);
     }
 

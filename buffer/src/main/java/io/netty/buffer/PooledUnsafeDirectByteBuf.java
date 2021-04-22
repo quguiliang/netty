@@ -50,7 +50,9 @@ final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
     @Override
     void init(PoolChunk<ByteBuffer> chunk, ByteBuffer nioBuffer,
               long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
+        // 调用父初始化方法
         super.init(chunk, nioBuffer, handle, offset, length, maxLength, cache);
+        // 初始化内存地址
         initMemoryAddress();
     }
 
@@ -211,6 +213,7 @@ final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
         return UnsafeByteBufUtil.setBytes(this, addr(index), index, in, length);
     }
 
+    // 复制指定范围的数据到新创建的Direct ByteBuf对象
     @Override
     public ByteBuf copy(int index, int length) {
         return UnsafeByteBufUtil.copy(this, addr(index), index, length);

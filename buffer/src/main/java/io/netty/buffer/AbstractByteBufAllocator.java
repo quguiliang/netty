@@ -27,15 +27,28 @@ import io.netty.util.internal.StringUtil;
  * Skeletal {@link ByteBufAllocator} implementation to extend.
  */
 public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
+    /**
+     * 默认容量大小
+     */
     static final int DEFAULT_INITIAL_CAPACITY = 256;
+    /**
+     * 默认最大容量大小，无限。
+     */
     static final int DEFAULT_MAX_CAPACITY = Integer.MAX_VALUE;
+    /**
+     * Composite ByteBuf 可包含的 ByteBuf 的最大数量
+     */
     static final int DEFAULT_MAX_COMPONENTS = 16;
+    /**
+     * 扩容分界线，4M
+     */
     static final int CALCULATE_THRESHOLD = 1048576 * 4; // 4 MiB page
 
     static {
         ResourceLeakDetector.addExclusions(AbstractByteBufAllocator.class, "toLeakAwareBuffer");
     }
 
+    //将ByteBuf装饰成LeakAware（可检测内存泄漏）的ByteBuf对象
     protected static ByteBuf toLeakAwareBuffer(ByteBuf buf) {
         ResourceLeakTracker<ByteBuf> leak;
         switch (ResourceLeakDetector.getLevel()) {
@@ -80,7 +93,13 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         return buf;
     }
 
+    /**
+     * 是否倾向创建 Direct ByteBuf
+     */
     private final boolean directByDefault;
+    /**
+     * 空 ByteBuf 缓存
+     */
     private final ByteBuf emptyBuf;
 
     /**
@@ -161,10 +180,12 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
 
     @Override
     public ByteBuf heapBuffer(int initialCapacity, int maxCapacity) {
+        // 空 ByteBuf 对象
         if (initialCapacity == 0 && maxCapacity == 0) {
             return emptyBuf;
         }
-        validate(initialCapacity, maxCapacity);
+        validate(initialCapacity, maxCapacity); // 校验容量的参数
+        // 创建 Heap ByteBuf 对象
         return newHeapBuffer(initialCapacity, maxCapacity);
     }
 
@@ -257,10 +278,12 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         }
         final int threshold = CALCULATE_THRESHOLD; // 4 MiB page
 
+        // <1> 等于 threshold ，直接返回 threshold 。
         if (minNewCapacity == threshold) {
             return threshold;
         }
 
+        // <2> 超过 threshold ，增加 threshold ，不超过 maxCapacity 大小
         // If over threshold, do not double but just increase by threshold.
         if (minNewCapacity > threshold) {
             int newCapacity = minNewCapacity / threshold * threshold;
@@ -272,6 +295,7 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
             return newCapacity;
         }
 
+        // <3> 未超过 threshold ，从 64 开始两倍计算，不超过 4M 大小。
         // Not over threshold. Double up to 4 MiB, starting from 64.
         int newCapacity = 64;
         while (newCapacity < minNewCapacity) {

@@ -58,6 +58,8 @@ public interface ByteBufAllocator {
     ByteBuf ioBuffer(int initialCapacity, int maxCapacity);
 
     /**
+     * 创建一个 Heap Buffer 对象
+     *
      * Allocate a heap {@link ByteBuf}.
      */
     ByteBuf heapBuffer();
@@ -74,6 +76,8 @@ public interface ByteBufAllocator {
     ByteBuf heapBuffer(int initialCapacity, int maxCapacity);
 
     /**
+     * 创建一个 Direct Buffer 对象
+     *
      * Allocate a direct {@link ByteBuf}.
      */
     ByteBuf directBuffer();
@@ -90,6 +94,8 @@ public interface ByteBufAllocator {
     ByteBuf directBuffer(int initialCapacity, int maxCapacity);
 
     /**
+     * 创建一个 Composite ByteBuf 对象。具体创建的是 Heap ByteBuf 还是 Direct ByteBuf ，由实现类决定
+     *
      * Allocate a {@link CompositeByteBuf}.
      * If it is a direct or heap buffer depends on the actual implementation.
      */
@@ -102,6 +108,8 @@ public interface ByteBufAllocator {
     CompositeByteBuf compositeBuffer(int maxNumComponents);
 
     /**
+     * 创建一个 Composite Heap ByteBuf 对象
+     *
      * Allocate a heap {@link CompositeByteBuf}.
      */
     CompositeByteBuf compositeHeapBuffer();
@@ -112,6 +120,8 @@ public interface ByteBufAllocator {
     CompositeByteBuf compositeHeapBuffer(int maxNumComponents);
 
     /**
+     * 创建一个 Composite Direct ByteBuf 对象
+     *
      * Allocate a direct {@link CompositeByteBuf}.
      */
     CompositeByteBuf compositeDirectBuffer();

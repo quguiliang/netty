@@ -28,16 +28,48 @@ import java.nio.channels.ScatteringByteChannel;
 
 abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
+    /**
+     * Recycler处理器，用于回收当前对象；
+     */
     private final Handle<PooledByteBuf<T>> recyclerHandle;
 
+    /**
+     * Chunk对象；在Netty中，使用Jemalloc算法管理内存，而Chunk是里面的一种内存块。
+     */
     protected PoolChunk<T> chunk;
+    /**
+     * 从 Chunk 对象中分配的内存块所处的位置
+     */
     protected long handle;
+    /**
+     * 内存空间。具体什么样的数据，通过子类设置泛型；
+     * 例如：
+     * 1) PooledDirectByteBuf 和 PooledUnsafeDirectByteBuf 为 ByteBuffer ；
+     * 2) PooledHeapByteBuf 和 PooledUnsafeHeapByteBuf 为 byte[]
+     */
     protected T memory;
+    /**
+     * memory开始位置
+     */
     protected int offset;
+    /**
+     * 容量
+     * @see #capacity()
+     */
     protected int length;
+
+    /**
+     * 占用 #memory 的大小
+     */
     int maxLength;
     PoolThreadCache cache;
+    /**
+     * 临时 ByteBuffer 对象
+     */
     ByteBuffer tmpNioBuf;
+    /**
+     * ByteBuf 分配器对象
+     */
     private ByteBufAllocator allocator;
 
     @SuppressWarnings("unchecked")
@@ -55,6 +87,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         init0(chunk, null, 0, 0, length, length, null);
     }
 
+    //初始化 PooledByteBuf 对象
     private void init0(PoolChunk<T> chunk, ByteBuffer nioBuffer,
                        long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
         assert handle >= 0;
@@ -72,12 +105,17 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
     }
 
     /**
+     * 重用PooledByteBuf
      * Method must be called before reuse this {@link PooledByteBufAllocator}
      */
     final void reuse(int maxCapacity) {
+        //设置最大容量
         maxCapacity(maxCapacity);
+        //设置引用数量为0
         resetRefCnt();
+        //重置读写索引为0
         setIndex0(0, 0);
+        //重置读写标记位为0
         discardMarks();
     }
 
@@ -97,8 +135,10 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
             ensureAccessible();
             return this;
         }
+        //校验新的容量，不能超过最大容量
         checkNewCapacity(newCapacity);
         if (!chunk.unpooled) {
+            //Chunk内存是池化
             // If the request capacity does not require reallocation, just update the length of the memory.
             if (newCapacity > length) {
                 if (newCapacity <= maxLength) {
@@ -114,6 +154,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
             }
         }
 
+        //重新分配新的内存空间，并将数据复制到其中。并且，释放老的内存空间；
         // Reallocation required.
         chunk.arena.reallocate(this, newCapacity, true);
         return this;
@@ -150,6 +191,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         return PooledSlicedByteBuf.newInstance(this, this, index, length);
     }
 
+    //基于tmpNioBuf属性实现，所以方法在命名上，以 "internal" 打头。
     protected final ByteBuffer internalNioBuffer() {
         ByteBuffer tmpNioBuf = this.tmpNioBuf;
         if (tmpNioBuf == null) {
@@ -184,6 +226,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
     }
 
     final ByteBuffer _internalNioBuffer(int index, int length, boolean duplicate) {
+        // memory中的开始位置
         index = idx(index);
         ByteBuffer buffer = duplicate ? newInternalNioBuffer(memory) : internalNioBuffer();
         buffer.limit(index + length).position(index);
@@ -201,16 +244,20 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         return _internalNioBuffer(index, length, false);
     }
 
+    // 返回ByteBuf包含ByteBuffer数量为1
     @Override
     public final int nioBufferCount() {
         return 1;
     }
 
+    // 返回 ByteBuf 指定范围包含的 ByteBuffer 对象(共享)
     @Override
     public final ByteBuffer nioBuffer(int index, int length) {
         return duplicateInternalNioBuffer(index, length).slice();
     }
 
+    // 返回 ByteBuf 指定范围内包含的 ByteBuffer 数组(共享)
+    //创建大小为1的ByteBuffer数组
     @Override
     public final ByteBuffer[] nioBuffers(int index, int length) {
         return new ByteBuffer[] { nioBuffer(index, length) };
