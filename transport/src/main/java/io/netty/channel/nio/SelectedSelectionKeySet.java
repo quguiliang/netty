@@ -37,6 +37,7 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
         }
 
         keys[size++] = o;
+        // 超过数组大小上限，进行扩容
         if (size == keys.length) {
             increaseCapacity();
         }
@@ -89,13 +90,18 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
     }
 
     void reset(int start) {
+        // 重置数组内容为空
         Arrays.fill(keys, start, size, null);
+        // 重置可读大小为 0
         size = 0;
     }
 
     private void increaseCapacity() {
+        // 两倍扩容
         SelectionKey[] newKeys = new SelectionKey[keys.length << 1];
+        // 复制老数组到新数组
         System.arraycopy(keys, 0, newKeys, 0, size);
+        // 赋值给老数组
         keys = newKeys;
     }
 }
