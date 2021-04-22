@@ -34,24 +34,30 @@ public class EchoClientHandler extends ChannelInboundHandlerAdapter {
      */
     public EchoClientHandler() {
         firstMessage = Unpooled.buffer(EchoClient.SIZE);
-        for (int i = 0; i < firstMessage.capacity(); i ++) {
+        for (int i = 0; i < firstMessage.capacity(); i++) {
             firstMessage.writeByte((byte) i);
         }
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        ctx.writeAndFlush(firstMessage);
+        //ctx.writeAndFlush(firstMessage);
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        ctx.write(msg);
+        ByteBuf byteBuf = (ByteBuf) msg;
+        int len = byteBuf.readableBytes();
+        System.out.print("receive msg:");
+        for (int i = 0; i < len; i++) {
+            System.out.print(Integer.toHexString(byteBuf.readByte()) + " ");
+        }
+        //ctx.write(msg);
     }
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) {
-       ctx.flush();
+        ctx.flush();
     }
 
     @Override
